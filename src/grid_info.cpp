@@ -173,7 +173,7 @@ void Cell_info::OutputEvolutionDataXYEta(SCGrid &arena, double tau) {
                 double cs2_local = eos.get_cs2(e_local, rhob_local);
                 double muB_local = eos.get_muB(e_local, rhob_local);
                 double enthropy  = e_local + p_local;  // [1/fm^4]
-                
+
                 double Wtautau = 0.0;
                 double Wtaux   = 0.0;
                 double Wtauy   = 0.0;
@@ -296,13 +296,13 @@ void Cell_info::OutputEvolution_Knudsen_Reynoldsnumbers(SCGrid &arena,
     } else {
         out_open_mode = "a";
     }
-    
+
     // If we output in binary, set the mode accordingly
     if (DATA.outputBinaryEvolution == 0) {
         out_open_mode += "b";
     }
     out_file_xyeta = fopen(out_name_xyeta.c_str(), out_open_mode.c_str());
-    
+
     const int n_skip_x   = DATA.output_evolution_every_N_x;
     const int n_skip_y   = DATA.output_evolution_every_N_y;
     const int n_skip_eta = DATA.output_evolution_every_N_eta;
@@ -320,7 +320,7 @@ void Cell_info::OutputEvolution_Knudsen_Reynoldsnumbers(SCGrid &arena,
                     float array[] = {static_cast<float>(R_pi),
                                      static_cast<float>(R_Pi)};
                     fwrite(array, sizeof(float), 2, out_file_xyeta);
-                } 
+                }
             }
         }
     }
@@ -333,7 +333,7 @@ void Cell_info::calculate_inverse_Reynolds_numbers(
                                 const int ieta, const int ix, const int iy,
                                 double &R_pi, double &R_Pi) const {
     const auto grid_pt = arena_current(ix, iy, ieta);
-    
+
     const double e_local  = grid_pt.epsilon;
     const double rhob     = grid_pt.rhob;
     const double pressure = eos.get_pressure(e_local, rhob);
@@ -353,7 +353,7 @@ void Cell_info::calculate_inverse_Reynolds_numbers(
            pi_00*pi_00 + pi_11*pi_11 + pi_22*pi_22 + pi_33*pi_33
          - 2.*(pi_01*pi_01 + pi_02*pi_02 + pi_03*pi_03)
          + 2.*(pi_12*pi_12 + pi_13*pi_13 + pi_23*pi_23));
-    
+
     const double pi_local = grid_pt.pi_b;
 
     R_pi = sqrt(pisize)/pressure;
@@ -393,7 +393,7 @@ void Cell_info::OutputEvolutionDataXYEta_memory(
 
                 double T_local   = eos.get_temperature(e_local, rhob_local);
                 double s_local   = eos.get_entropy(e_local, rhob_local);
-                
+
                 hydro_info_ptr.dump_ideal_info_to_memory(
                     tau, eta, e_local, p_local, s_local, T_local, vx, vy, vz);
             }
@@ -401,9 +401,9 @@ void Cell_info::OutputEvolutionDataXYEta_memory(
     }
 }
 
-    
+
 //! This function outputs hydro evolution file in binary format
-void Cell_info::OutputEvolutionDataXYEta_chun(SCGrid &arena, 
+void Cell_info::OutputEvolutionDataXYEta_chun(SCGrid &arena,
                                               double tau) {
     // the format of the file is as follows,
     //    itau ix iy ieta e P T ux uy ueta
@@ -713,7 +713,7 @@ void Cell_info::get_maximum_energy_density(SCGrid &arena) {
 
     #pragma omp parallel for collapse(3) reduction(max:eps_max, rhob_max, T_max)
     for (int ieta = 0; ieta < neta; ieta++)
-    for (int ix = 0; ix < nx; ix++) 
+    for (int ix = 0; ix < nx; ix++)
     for (int iy = 0; iy < ny; iy++) {
         const auto eps_local  = arena(ix, iy, ieta).epsilon;
         const auto rhob_local = arena(ix, iy, ieta).rhob;
@@ -744,8 +744,8 @@ void Cell_info::check_conservation_law(SCGrid &arena, SCGrid &arena_prev,
     const int ny   = arena.nY();
 
     #pragma omp parallel for collapse(3) reduction(+:N_B, T_tau_t)
-    for (int ieta = 0; ieta < neta; ieta++)     
-    for (int ix = 0; ix < nx; ix++) 
+    for (int ieta = 0; ieta < neta; ieta++)
+    for (int ix = 0; ix < nx; ix++)
     for (int iy = 0; iy < ny; iy++) {
         const auto& c      = arena     (ix, iy, ieta);
         const auto& c_prev = arena_prev(ix, iy, ieta);
@@ -776,6 +776,47 @@ void Cell_info::check_conservation_law(SCGrid &arena, SCGrid &arena_prev,
     music_message.flush("info");
     music_message << "total energy T^{taut} = " << T_tau_t << " GeV";
     music_message.flush("info");
+}
+
+//in boost inv case longitudinal pressure will reduce energy at midrap,
+// but unless there is a problem total energy should be monotonically decreasing
+double Cell_info::check_total_energy_boost_inv(SCGrid &arena, SCGrid &arena_prev, double tau)
+{
+    double total_energy = 0.0;
+    double dx      = DATA.delta_x;
+    double dy      = DATA.delta_y;
+    const int neta = arena.nEta();
+    const int nx   = arena.nX();
+    const int ny   = arena.nY();
+
+    #pragma omp parallel for collapse(3) reduction(+:total_energy)
+    for (int ieta = 0; ieta < neta; ieta++)
+    {
+      for (int ix = 0; ix < nx; ix++)
+      {
+        for (int iy = 0; iy < ny; iy++)
+        {
+            const auto& c      = arena     (ix, iy, ieta);
+            const auto& c_prev = arena_prev(ix, iy, ieta);
+            const double Pi00_rk_0 = ( c_prev.pi_b * ( -1.0 + c_prev.u[0]*c_prev.u[0] ) );
+            const double e_local   = c.epsilon;
+            const double rhob      = c.rhob;
+            const double pressure  = eos.get_pressure(e_local, rhob);
+            const double u0        = c.u[0];
+            const double T00_local = (e_local + pressure)*u0*u0 - pressure;
+            const double T_tau_tau = (T00_local + c_prev.Wmunu[0] + Pi00_rk_0);
+
+            total_energy += T_tau_tau;
+        }
+      } //for (int ix = 0; ix < nx; ix++)
+    } //for (int ieta = 0; ieta < neta; ieta++)
+
+    double factor = tau*dx*dy;
+    total_energy *= factor * 0.19733;  // GeV
+    music_message << "total energy on grid = " << total_energy << " GeV";
+    music_message.flush("info");
+
+    return total_energy;
 }
 
 
@@ -934,7 +975,7 @@ void Cell_info::output_evolution_for_movie(SCGrid &arena, double tau) {
                 // T_local is in 1/fm
                 double T_local   = eos.get_temperature(e_local, rhob_local);
                 double muB_local = eos.get_muB(e_local, rhob_local);  // 1/fm
-        
+
                 double pressure  = eos.get_pressure(e_local, rhob_local);
                 double u0        = arena(ix, iy, ieta).u[0];
                 double u1        = arena(ix, iy, ieta).u[1];
