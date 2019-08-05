@@ -819,6 +819,45 @@ double Cell_info::check_total_energy_boost_inv(SCGrid &arena, SCGrid &arena_prev
     return total_energy;
 }
 
+double Cell_info::check_longitudinal_work(SCGrid &arena, SCGrid &arena_prev, double tau, double dt)
+{
+    double total_work = 0.0;
+    double dx      = DATA.delta_x;
+    double dy      = DATA.delta_y;
+    const int neta = arena.nEta();
+    const int nx   = arena.nX();
+    const int ny   = arena.nY();
+
+    #pragma omp parallel for collapse(3) reduction(+:total_work)
+    for (int ieta = 0; ieta < neta; ieta++)
+    {
+      for (int ix = 0; ix < nx; ix++)
+      {
+        for (int iy = 0; iy < ny; iy++)
+        {
+            //const auto& c      = arena     (ix, iy, ieta);
+            const double tau2 = tau * tau;
+            const auto& c_prev = arena_prev(ix, iy, ieta);
+            const double Pi = c_prev.pi_b;
+            const double e_local   = c_prev.epsilon;
+            const double rhob      = c_prev.rhob;
+            const double pressure  = eos.get_pressure(e_local, rhob);
+            const double un        = c_prev.u[3]; //covariant tau * u ^ {eta}
+            const double Delta_n_n = (-1.0 / tau2) - (un * un);  //covariant Delta ^{eta eta} projector
+            const double tau2_pi_n_n = c_prev.Wmunu[9];  // covariant tau^2 pi^{eta eta}
+            const double tau2_T_n_n = e_local * un * un - ( (pressure + Pi) * Delta_n_n * tau2) + tau2_pi_n_n;
+
+            total_work += tau2_T_n_n;
+        }
+      } //for (int ix = 0; ix < nx; ix++)
+    } //for (int ieta = 0; ieta < neta; ieta++)
+
+    double factor = dt*dx*dy;
+    total_work *= factor * 0.19733;  // GeV
+
+    return total_work;
+}
+
 
 
 //! This function putputs files to check with Gubser flow solution

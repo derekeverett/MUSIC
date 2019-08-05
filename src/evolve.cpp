@@ -60,6 +60,8 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
     double source_tau_max = 0.0;
 
     double totEnergyPrev = 0.0;
+    double totLongitudinalWorkDone = 0.0;
+    double totInitialEnergy = 0.0;
 
     if (DATA.Initial_profile == 13 || DATA.Initial_profile == 30) {
         source_tau_max = hydro_source_terms.get_source_tau_max();
@@ -148,8 +150,13 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
 
         else
         {
+          //if first time step, check what is total energy on grid
+          if (it == 1) totInitialEnergy = grid_info.check_total_energy_boost_inv(*ap_current, *ap_prev, tau);
+
+          //at each time step check total energy contained at midrap
           double totEnergy = grid_info.check_total_energy_boost_inv(*ap_current, *ap_prev, tau);
-          //something is wrong if total energy on grid increases by large fraction
+
+          //something is wrong if total energy on grid increases by large fraction in a single time step
           double percentIncrease = 100.0 * (totEnergy - totEnergyPrev) / totEnergyPrev;
           if ( (it > 1) && (percentIncrease > 0.00) )
           {
@@ -157,6 +164,37 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
             music_message.flush("error");
             exit(1);
           }
+
+          //now subtract the total energy lost to longitudinal pressure
+          double longitudinalWork = grid_info.check_longitudinal_work(*ap_current, *ap_prev, tau, dt);
+
+          //add it to the total amount of longitudinal work done during entire evolution
+          totLongitudinalWorkDone += longitudinalWork;
+
+          //the expected total energy at eta_s = 0 considering 'work' done by T^{eta eta}
+          double expectedTotEnergy = totEnergyPrev - longitudinalWork;
+          double percentDiff = 100.0 * ( fabs(totEnergy - expectedTotEnergy) ) / totEnergy;
+          if ( (it > 1) && (percentDiff > 0.1) )
+          {
+            music_message << "Total Energy changed by " << percentDiff << " % in one time step." << "\n";
+            music_message << "check stability or regulation scheme! ";
+            music_message.flush("error");
+            exit(1);
+          }
+
+          //if the total energy at midrap differs by more than 5% from total initial energy (after considering longitudinal work)
+          //then there is probably a problem with regulation of dissipative currents being too strong or a large amount of
+          //energy is advected off of the spacetime grid
+          double totEnergyLeft = totInitialEnergy - totLongitudinalWorkDone;
+          double percentDiffFromInitial = 100.0 * ( fabs(totEnergyLeft - totEnergy) / totEnergy);
+          if ( (it > 1) && (percentDiffFromInitial > 5.0 ) )
+          {
+            music_message << "Total Energy changed by " << percentDiff << " % since beginning of evolution" << "\n";
+            music_message << "check stability, regulation scheme or if grid is too small ! ";
+            music_message.flush("error");
+            exit(1);
+          }
+
           totEnergyPrev = totEnergy;
         }
 
