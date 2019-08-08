@@ -796,26 +796,20 @@ double Cell_info::check_total_energy_boost_inv(SCGrid &arena, SCGrid &arena_prev
       {
         for (int iy = 0; iy < ny; iy++)
         {
-            const auto& c      = arena(ix, iy, ieta);
-            //const auto& c_prev = arena_prev(ix, iy, ieta);
-            //const double Pi00_rk_0 = ( c_prev.pi_b * ( -1.0 + c_prev.u[0]*c_prev.u[0] ) );
+            auto& c      = arena(ix, iy, ieta);
+            double e_local   = c.epsilon;
+            double rhob      = c.rhob;
+            double pressure  = eos.get_pressure(e_local, rhob);
+            double Pi        = c.pi_b;
+            double ut        = c.u[0];
+            double Delta_t_t = 1.0 - ut * ut;
+            double pi_t_t = c.Wmunu[0];
 
-            const double e_local   = c.epsilon;
-            const double rhob      = c.rhob;
-            const double pressure  = eos.get_pressure(e_local, rhob);
-            const double Pi        = c.pi_b;
-            const double ut        = c.u[0];
-            const double Delta_t_t = 1.0 - ut * ut;
-            const double pi_t_t = c.Wmunu[0];
+            double T_t_t;
+            if (DATA.viscosity_flag == 1) T_t_t = e_local * ut * ut - ( (pressure + Pi) * Delta_t_t) + pi_t_t;
+            else T_t_t = e_local * ut * ut - pressure * Delta_t_t;
 
-            //const double T00_local = (e_local + pressure)*u0*u0 - pressure;
-            //const double T_tau_tau = (T00_local + c_prev.Wmunu[0] + Pi00_rk_0);
-
-            const double T_t_t = e_local * ut * ut - ( (pressure + Pi) * Delta_t_t) + pi_t_t;
-            const double T_t_t_ideal = e_local * ut * ut - pressure * Delta_t_t;
-
-            //total_energy += T_t_t;
-            total_energy += T_t_t_ideal;
+            total_energy += T_t_t;
         }
       } //for (int ix = 0; ix < nx; ix++)
     } //for (int ieta = 0; ieta < neta; ieta++)
@@ -846,20 +840,20 @@ double Cell_info::check_longitudinal_work(SCGrid &arena, SCGrid &arena_prev, dou
         for (int iy = 0; iy < ny; iy++)
         {
             //const auto& c      = arena     (ix, iy, ieta);
-            const auto& c_prev = arena_prev(ix, iy, ieta);
-            const double Pi = c_prev.pi_b;
-            const double e_local   = c_prev.epsilon;
-            const double rhob      = c_prev.rhob;
-            const double pressure  = eos.get_pressure(e_local, rhob);
-            const double un        = c_prev.u[3] / tau; //covariant tau * u ^ {eta}
-            const double Delta_n_n = (-1.0 / tau2) - (un * un);  //covariant Delta ^{eta eta} projector
-            const double pi_n_n = c_prev.Wmunu[9] / tau2;  // covariant tau^2 pi^{eta eta}
+            auto& c_prev = arena_prev(ix, iy, ieta);
+            double Pi = c_prev.pi_b;
+            double e_local   = c_prev.epsilon;
+            double rhob      = c_prev.rhob;
+            double pressure  = eos.get_pressure(e_local, rhob);
+            double un        = c_prev.u[3] / tau; //covariant tau * u ^ {eta}
+            double Delta_n_n = (-1.0 / tau2) - (un * un);  //covariant Delta ^{eta eta} projector
+            double pi_n_n = c_prev.Wmunu[9] / tau2;  // covariant tau^2 pi^{eta eta}
 
-            const double T_n_n = e_local * un * un - ( (pressure + Pi) * Delta_n_n) + pi_n_n;
-            const double T_n_n_ideal = e_local * un * un - (pressure * Delta_n_n);
+            double T_n_n;
+            if (DATA.viscosity_flag == 1) T_n_n = e_local * un * un - ( (pressure + Pi) * Delta_n_n) + pi_n_n;
+            else T_n_n = e_local * un * un - (pressure * Delta_n_n);
 
-            //total_work += T_n_n;
-            total_work += T_n_n_ideal;
+            total_work += T_n_n;
         }
       } //for (int ix = 0; ix < nx; ix++)
     } //for (int ieta = 0; ieta < neta; ieta++)
@@ -895,11 +889,12 @@ double Cell_info::check_energy_advected_boundary(SCGrid &arena, SCGrid &arena_pr
         double uy        = c_prev.u[2]; //covariant  u ^ {y}
         double Delta_t_y = -1.0 * ut * uy;  //covariant Delta ^{t y} projector
         double pi_t_y = c_prev.Wmunu[2];  // covariant pi^{t y}
-        double T_t_y = e_local * ut * uy - ( (pressure + Pi) * Delta_t_y) + pi_t_y;
-        double T_t_y_ideal = e_local * ut * uy - (pressure * Delta_t_y);
 
-        //total_energy_adv += tau * dt * dx * T_t_y;
-        total_energy_adv += tau * dt * dx * T_t_y_ideal;
+        double T_t_y;
+        if (DATA.viscosity_flag == 1) T_t_y = e_local * ut * uy - ( (pressure + Pi) * Delta_t_y) + pi_t_y;
+        else T_t_y = e_local * ut * uy - (pressure * Delta_t_y);
+
+        total_energy_adv += tau * dt * dx * T_t_y;
 
         iy = 0;
         c_prev = arena_prev(ix, iy, ieta);
@@ -911,11 +906,12 @@ double Cell_info::check_energy_advected_boundary(SCGrid &arena, SCGrid &arena_pr
         uy        = c_prev.u[2]; //covariant  u ^ {y}
         Delta_t_y = -1.0 * ut * uy;  //covariant Delta ^{t y} projector
         pi_t_y = c_prev.Wmunu[2];  // covariant pi^{t y}
-        T_t_y = e_local * ut * uy - ( (pressure + Pi) * Delta_t_y) + pi_t_y;
-        T_t_y_ideal = e_local * ut * uy - (pressure * Delta_t_y);
 
-        //total_energy_adv -= tau * dt * dx * T_t_y;
-        total_energy_adv -= tau * dt * dx * T_t_y_ideal;
+        if (DATA.viscosity_flag == 1) T_t_y = e_local * ut * uy - ( (pressure + Pi) * Delta_t_y) + pi_t_y;
+        else T_t_y = e_local * ut * uy - (pressure * Delta_t_y);
+
+        total_energy_adv -= tau * dt * dx * T_t_y;
+
 
       } //for (int ix = 0; ix < nx; ix++)
 
@@ -932,11 +928,12 @@ double Cell_info::check_energy_advected_boundary(SCGrid &arena, SCGrid &arena_pr
         double ux        = c_prev.u[1]; //covariant  u ^ {eta}
         double Delta_t_x = -1.0 * ut * ux;  //covariant Delta ^{t y} projector
         double pi_t_x = c_prev.Wmunu[1];  // covariant pi^{t y}
-        double T_t_x = e_local * ut * ux - ( (pressure + Pi) * Delta_t_x) + pi_t_x;
-        double T_t_x_ideal = e_local * ut * ux - (pressure * Delta_t_x);
 
-        //total_energy_adv += tau * dt * dy * T_t_x;
-        total_energy_adv += tau * dt * dy * T_t_x_ideal;
+        double T_t_x;
+        if (DATA.viscosity_flag == 1) T_t_x = e_local * ut * ux - ( (pressure + Pi) * Delta_t_x) + pi_t_x;
+        else T_t_x = e_local * ut * ux - (pressure * Delta_t_x);
+
+        total_energy_adv += tau * dt * dy * T_t_x;
 
         ix = 0;
         c_prev = arena_prev(ix, iy, ieta);
@@ -948,11 +945,11 @@ double Cell_info::check_energy_advected_boundary(SCGrid &arena, SCGrid &arena_pr
         ux        = c_prev.u[1]; //covariant  u ^ {eta}
         Delta_t_x = -1.0 * ut * ux;  //covariant Delta ^{t y} projector
         pi_t_x = c_prev.Wmunu[1];  // covariant pi^{t y}
-        T_t_x = e_local * ut * ux - ( (pressure + Pi) * Delta_t_x) + pi_t_x;
-        T_t_x_ideal = e_local * ut * ux - (pressure * Delta_t_x);
 
-        //total_energy_adv -= tau * dt * dy * T_t_x;
-        total_energy_adv -= tau * dt * dy * T_t_x_ideal;
+        if (DATA.viscosity_flag == 1) T_t_x = e_local * ut * ux - ( (pressure + Pi) * Delta_t_x) + pi_t_x;
+        else T_t_x = e_local * ut * ux - (pressure * Delta_t_x);
+        total_energy_adv -= tau * dt * dy * T_t_x;
+
       } //for (int iy = 0; iy < ny; iy++)
 
     } //for (int ieta = 0; ieta < neta; ieta++)
