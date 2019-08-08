@@ -61,6 +61,7 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
 
     double totEnergyPrev = 0.0;
     double totLongitudinalWorkDone = 0.0;
+    double totEnergyAdvectedOffBoundary = 0.0;
     double totInitialEnergy = 0.0;
 
     if (DATA.Initial_profile == 13 || DATA.Initial_profile == 30) {
@@ -154,13 +155,13 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
           if (it == 1) totInitialEnergy = grid_info.check_total_energy_boost_inv(*ap_current, *ap_prev, tau);
 
           //at each time step check total energy contained at midrap
-          double totEnergy = grid_info.check_total_energy_boost_inv(*ap_current, *ap_prev, tau);
+          double totEnergyCurrent = grid_info.check_total_energy_boost_inv(*ap_current, *ap_prev, tau);
 
           //something is wrong if total energy on grid increases by large fraction in a single time step
-          double percentIncrease = 100.0 * (totEnergy - totEnergyPrev) / totEnergyPrev;
-          if ( (it > 1) && (percentIncrease > 0.00) )
+          double percentIncrease = 100.0 * (totEnergyCurrent - totEnergyPrev) / totEnergyPrev;
+          if ( (it > 10) && (percentIncrease > .5) )
           {
-            music_message << "Total Energy on grid increased by " << percentIncrease << " % ; check stability! ";
+            music_message << "Total Energy on grid increased by " << percentIncrease << " % in one time step; check stability! ";
             music_message.flush("error");
             exit(1);
           }
@@ -171,31 +172,40 @@ int Evolve::EvolveIt(SCGrid &arena_prev, SCGrid &arena_current,
           //add it to the total amount of longitudinal work done during entire evolution
           totLongitudinalWorkDone += longitudinalWork;
 
-          //the expected total energy at eta_s = 0 considering 'work' done by T^{eta eta}
-          double expectedTotEnergy = totEnergyPrev - longitudinalWork;
+          //subtract total energy advected off of grid boundary
+          double energyAdvectedOffBoundary = grid_info.check_energy_advected_boundary(*ap_current, *ap_prev, tau, dt);
+
+          //add it to the total amount of energy advected off boundary
+          totEnergyAdvectedOffBoundary += energyAdvectedOffBoundary;
+
+          /*
+          //the expected total energy at eta_s = 0 considering 'work' done by T^{eta eta} and energy advected off grid boundaries
+          double expectedTotEnergy = totEnergyPrev - longitudinalWork - energyAdvectedOffBoundary;
           double percentDiff = 100.0 * ( fabs(totEnergy - expectedTotEnergy) ) / totEnergy;
-          if ( (it > 1) && (percentDiff > 0.1) )
+          if ( (it > 10) && (percentDiff > 1.0) )
           {
             music_message << "Total Energy changed by " << percentDiff << " % in one time step." << "\n";
             music_message << "check stability or regulation scheme! ";
             music_message.flush("error");
             exit(1);
           }
+          */
 
-          //if the total energy at midrap differs by more than 5% from total initial energy (after considering longitudinal work)
-          //then there is probably a problem with regulation of dissipative currents being too strong or a large amount of
-          //energy is advected off of the spacetime grid
-          double totEnergyLeft = totInitialEnergy - totLongitudinalWorkDone;
-          double percentDiffFromInitial = 100.0 * ( fabs(totEnergyLeft - totEnergy) / totEnergy);
-          if ( (it > 1) && (percentDiffFromInitial > 5.0 ) )
+          //if the total energy at midrap differs by more than ?% from total initial energy (after considering longitudinal work and energy advected off of grid)
+          //then there is probably a problem with regulation of dissipative currents being too strong
+
+          double totEnergyExpected = totInitialEnergy - totLongitudinalWorkDone - totEnergyAdvectedOffBoundary;
+
+          double percentDiffFromInitial = 100.0 * ( fabs(totEnergyExpected - totEnergyCurrent) / totEnergyCurrent);
+
+          if ( (it > 10) && (percentDiffFromInitial > 5.0) )
           {
-            music_message << "Total Energy changed by " << percentDiff << " % since beginning of evolution" << "\n";
-            music_message << "check stability, regulation scheme or if grid is too small ! ";
+            music_message << "Total Energy changed by " << percentDiffFromInitial << " % since beginning of evolution" << "\n";
             music_message.flush("error");
             exit(1);
           }
 
-          totEnergyPrev = totEnergy;
+          totEnergyPrev = totEnergyCurrent;
         }
 
         grid_info.get_maximum_energy_density(*ap_current);

@@ -106,9 +106,11 @@ class Cell_info {
     //! at a give proper time
     double check_total_energy_boost_inv(SCGrid &arena, SCGrid &arena_prev, double tau);
 
-    //! This function returns the amount of energy lost at eta_s = 0 due to nonzero longitudinal pressure 
+    //! This function returns the amount of energy lost at eta_s = 0 due to nonzero longitudinal pressure
     //! at a give proper time
     double check_longitudinal_work(SCGrid &arena, SCGrid &arena_prev, double tau, double dt);
+
+    double check_energy_advected_boundary(SCGrid &arena, SCGrid &arena_prev, double tau, double dt);
 
     //! This function outputs the evolution of hydrodynamic variables at a
     //! give fluid cell
